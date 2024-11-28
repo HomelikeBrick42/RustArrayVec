@@ -42,21 +42,24 @@ impl<T, const CAP: usize> ArrayVec<T, CAP> {
         array
     }
 
-    pub fn push(&mut self, value: T) -> Result<&mut T, T> {
-        if let Some(element) = self.data.get_mut(self.len) {
+    pub const fn push(&mut self, value: T) -> Result<&mut T, T> {
+        if self.len >= CAP {
+            return Err(value);
+        }
+        unsafe {
+            let ptr = self.data.as_mut_ptr().add(self.len).cast();
             self.len += 1;
-            Ok(element.write(value))
-        } else {
-            Err(value)
+            core::ptr::write(ptr, value);
+            Ok(&mut *ptr)
         }
     }
 
-    pub fn pop(&mut self) -> Option<T> {
+    pub const fn pop(&mut self) -> Option<T> {
         if self.len == 0 {
             None
         } else {
             self.len -= 1;
-            Some(unsafe { self.data.get_unchecked(self.len).assume_init_read() })
+            Some(unsafe { core::ptr::read(self.data.as_ptr().add(self.len).cast()) })
         }
     }
 
@@ -67,7 +70,7 @@ impl<T, const CAP: usize> ArrayVec<T, CAP> {
         unsafe { core::ptr::drop_in_place(elements) };
     }
 
-    pub fn insert(&mut self, index: usize, value: T) -> Result<&mut T, T> {
+    pub const fn insert(&mut self, index: usize, value: T) -> Result<&mut T, T> {
         if self.len < CAP && index <= self.len {
             // copy all elements to the right to make room
             unsafe {
@@ -78,15 +81,19 @@ impl<T, const CAP: usize> ArrayVec<T, CAP> {
             self.len += 1;
 
             // write the value at the index and return it
-            Ok(unsafe { self.data.get_unchecked_mut(index).write(value) })
+            unsafe {
+                let ptr = self.data.as_mut_ptr().add(index).cast();
+                core::ptr::write(ptr, value);
+                Ok(&mut *ptr)
+            }
         } else {
             Err(value)
         }
     }
 
-    pub fn remove(&mut self, index: usize) -> Option<T> {
+    pub const fn remove(&mut self, index: usize) -> Option<T> {
         if index < self.len {
-            let element = unsafe { self.data.get_unchecked(index).assume_init_read() };
+            let element = unsafe { core::ptr::read(self.data.as_ptr().add(index).cast()) };
             self.len -= 1;
 
             // copy elements after the index to the left
@@ -101,9 +108,9 @@ impl<T, const CAP: usize> ArrayVec<T, CAP> {
         }
     }
 
-    pub fn swap_remove(&mut self, index: usize) -> Option<T> {
+    pub const fn swap_remove(&mut self, index: usize) -> Option<T> {
         if index < self.len {
-            let element = unsafe { self.data.get_unchecked(index).assume_init_read() };
+            let element = unsafe { core::ptr::read(self.data.as_ptr().add(index).cast()) };
             self.len -= 1;
 
             if index != self.len {
