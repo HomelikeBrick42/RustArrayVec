@@ -139,6 +139,20 @@ impl<T, const CAP: usize> ArrayVec<T, CAP> {
         }
     }
 
+    pub const fn append<const OTHER_CAP: usize>(&mut self, other: &mut ArrayVec<T, OTHER_CAP>) {
+        let new_len = self.len + other.len;
+        assert!(new_len <= CAP);
+        unsafe {
+            core::ptr::copy_nonoverlapping(
+                other.data.as_ptr(),
+                self.data.as_mut_ptr().add(self.len),
+                other.len,
+            );
+            other.set_len(0);
+            self.set_len(new_len);
+        }
+    }
+
     #[must_use]
     pub fn map<F, U>(self, mut f: F) -> ArrayVec<U, CAP>
     where
@@ -261,20 +275,18 @@ impl<T: Clone, const CAP: usize> Clone for ArrayVec<T, CAP> {
         self.map_ref(Clone::clone)
     }
 
-    // TODO: this impl is stolen from Vec, but it doesnt seem to generate better code
-    //
-    // fn clone_from(&mut self, source: &Self) {
-    //     self.truncate(source.len);
-    //
-    //     let (init, tail) = source.split_at(self.len);
-    //
-    //     self.clone_from_slice(init);
-    //     for element in tail {
-    //         let Ok(_) = self.push(element.clone()) else {
-    //             unsafe { core::hint::unreachable_unchecked() }
-    //         };
-    //     }
-    // }
+    fn clone_from(&mut self, source: &Self) {
+        self.truncate(source.len);
+
+        let (init, tail) = source.split_at(self.len);
+
+        self.clone_from_slice(init);
+        for element in tail {
+            let Ok(_) = self.push(element.clone()) else {
+                unsafe { core::hint::unreachable_unchecked() }
+            };
+        }
+    }
 }
 
 impl<T: Debug, const CAP: usize> Debug for ArrayVec<T, CAP> {
