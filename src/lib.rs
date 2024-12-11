@@ -56,11 +56,10 @@ impl<T, const CAP: usize> ArrayVec<T, CAP> {
 
     pub const fn pop(&mut self) -> Option<T> {
         if self.len == 0 {
-            None
-        } else {
-            self.len -= 1;
-            Some(unsafe { core::ptr::read(self.data.as_ptr().add(self.len).cast()) })
+            return None;
         }
+        self.len -= 1;
+        Some(unsafe { core::ptr::read(self.data.as_ptr().add(self.len).cast()) })
     }
 
     pub fn clear(&mut self) {
@@ -71,59 +70,57 @@ impl<T, const CAP: usize> ArrayVec<T, CAP> {
     }
 
     pub const fn insert(&mut self, index: usize, value: T) -> Result<&mut T, T> {
-        if self.len < CAP && index <= self.len {
-            // copy all elements to the right to make room
-            unsafe {
-                let ptr = self.data.as_mut_ptr().add(index);
-                core::ptr::copy(ptr, ptr.add(1), self.len - index);
-            }
+        if self.len >= CAP || index > self.len {
+            return Err(value);
+        }
+        // copy all elements to the right to make room
+        unsafe {
+            let ptr = self.data.as_mut_ptr().add(index);
+            core::ptr::copy(ptr, ptr.add(1), self.len - index);
+        }
 
-            self.len += 1;
+        self.len += 1;
 
-            // write the value at the index and return it
-            unsafe {
-                let ptr = self.data.as_mut_ptr().add(index).cast();
-                core::ptr::write(ptr, value);
-                Ok(&mut *ptr)
-            }
-        } else {
-            Err(value)
+        // write the value at the index and return it
+        unsafe {
+            let ptr = self.data.as_mut_ptr().add(index).cast();
+            core::ptr::write(ptr, value);
+            Ok(&mut *ptr)
         }
     }
 
     pub const fn remove(&mut self, index: usize) -> Option<T> {
-        if index < self.len {
-            let element = unsafe { core::ptr::read(self.data.as_ptr().add(index).cast()) };
-            self.len -= 1;
-
-            // copy elements after the index to the left
-            unsafe {
-                let ptr = self.data.as_mut_ptr().add(index);
-                core::ptr::copy(ptr.add(1), ptr, self.len - index);
-            }
-
-            Some(element)
-        } else {
-            None
+        if index >= self.len {
+            return None;
         }
+
+        let element = unsafe { core::ptr::read(self.data.as_ptr().add(index).cast()) };
+        self.len -= 1;
+
+        // copy elements after the index to the left
+        unsafe {
+            let ptr = self.data.as_mut_ptr().add(index);
+            core::ptr::copy(ptr.add(1), ptr, self.len - index);
+        }
+
+        Some(element)
     }
 
     pub const fn swap_remove(&mut self, index: usize) -> Option<T> {
-        if index < self.len {
-            let element = unsafe { core::ptr::read(self.data.as_ptr().add(index).cast()) };
-            self.len -= 1;
-
-            if index != self.len {
-                unsafe {
-                    let ptr = self.data.as_mut_ptr();
-                    core::ptr::copy_nonoverlapping(ptr.add(self.len), ptr.add(index), 1);
-                }
-            }
-
-            Some(element)
-        } else {
-            None
+        if index >= self.len {
+            return None;
         }
+        let element = unsafe { core::ptr::read(self.data.as_ptr().add(index).cast()) };
+        self.len -= 1;
+
+        if index != self.len {
+            unsafe {
+                let ptr = self.data.as_mut_ptr();
+                core::ptr::copy_nonoverlapping(ptr.add(self.len), ptr.add(index), 1);
+            }
+        }
+
+        Some(element)
     }
 
     pub fn truncate(&mut self, len: usize) {
@@ -154,10 +151,7 @@ impl<T, const CAP: usize> ArrayVec<T, CAP> {
     }
 
     #[must_use]
-    pub fn map<F, U>(self, mut f: F) -> ArrayVec<U, CAP>
-    where
-        F: FnMut(T) -> U,
-    {
+    pub fn map<U>(self, mut f: impl FnMut(T) -> U) -> ArrayVec<U, CAP> {
         let mut array = ArrayVec::new();
         for element in self {
             let Ok(_) = array.push(f(element)) else {
@@ -168,10 +162,7 @@ impl<T, const CAP: usize> ArrayVec<T, CAP> {
     }
 
     #[must_use]
-    pub fn map_ref<'a, F, U>(&'a self, mut f: F) -> ArrayVec<U, CAP>
-    where
-        F: FnMut(&'a T) -> U,
-    {
+    pub fn map_ref<'a, U>(&'a self, mut f: impl FnMut(&'a T) -> U) -> ArrayVec<U, CAP> {
         let mut array = ArrayVec::new();
         for element in self {
             let Ok(_) = array.push(f(element)) else {
@@ -182,10 +173,7 @@ impl<T, const CAP: usize> ArrayVec<T, CAP> {
     }
 
     #[must_use]
-    pub fn map_mut<'a, F, U>(&'a mut self, mut f: F) -> ArrayVec<U, CAP>
-    where
-        F: FnMut(&'a mut T) -> U,
-    {
+    pub fn map_mut<'a, U>(&'a mut self, mut f: impl FnMut(&'a mut T) -> U) -> ArrayVec<U, CAP> {
         let mut array = ArrayVec::new();
         for element in self {
             let Ok(_) = array.push(f(element)) else {
@@ -202,13 +190,14 @@ impl<T, const CAP: usize> ArrayVec<T, CAP> {
         let len = self.len;
 
         let end = match range.end_bound() {
-            Bound::Included(&end) => end.saturating_add(1).min(len),
-            Bound::Excluded(&end) => end.min(len),
+            Bound::Included(&end) => end.saturating_add(1),
+            Bound::Excluded(&end) => end,
             Bound::Unbounded => len,
-        };
+        }
+        .min(len);
         let start = match range.start_bound() {
-            Bound::Included(&start) => start.min(len),
-            Bound::Excluded(&start) => start.saturating_add(1).min(len),
+            Bound::Included(&start) => start,
+            Bound::Excluded(&start) => start.saturating_add(1),
             Bound::Unbounded => 0,
         }
         .min(end);

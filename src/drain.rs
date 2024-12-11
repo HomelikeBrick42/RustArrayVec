@@ -48,53 +48,45 @@ impl<T, const CAP: usize> Iterator for Drain<'_, T, CAP> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.range_len > 0 {
-            let value = unsafe {
-                self.array
-                    .data
-                    .get_unchecked(self.range_start)
-                    .assume_init_read()
-            };
-            self.range_start += 1;
-            self.range_len -= 1;
-            Some(value)
-        } else {
-            None
+        if self.range_len == 0 {
+            return None;
         }
+        let value = unsafe {
+            self.array
+                .data
+                .get_unchecked(self.range_start)
+                .assume_init_read()
+        };
+        self.range_start += 1;
+        self.range_len -= 1;
+        Some(value)
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
         (self.range_len, Some(self.range_len))
     }
 
-    fn count(self) -> usize
-    where
-        Self: Sized,
-    {
+    fn count(self) -> usize {
         self.range_len
     }
 
-    fn last(mut self) -> Option<Self::Item>
-    where
-        Self: Sized,
-    {
+    fn last(mut self) -> Option<Self::Item> {
         self.next_back()
     }
 }
 
 impl<T, const CAP: usize> DoubleEndedIterator for Drain<'_, T, CAP> {
     fn next_back(&mut self) -> Option<Self::Item> {
-        if self.range_len > 0 {
-            self.range_len -= 1;
-            Some(unsafe {
-                self.array
-                    .data
-                    .get_unchecked(self.range_start + self.range_len)
-                    .assume_init_read()
-            })
-        } else {
-            None
+        if self.range_len == 0 {
+            return None;
         }
+        self.range_len -= 1;
+        Some(unsafe {
+            self.array
+                .data
+                .get_unchecked(self.range_start + self.range_len)
+                .assume_init_read()
+        })
     }
 }
 
