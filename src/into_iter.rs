@@ -57,13 +57,12 @@ impl<T, const CAP: usize> Iterator for IntoIter<T, CAP> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.start == self.end {
-            None
-        } else {
-            let index = self.start;
-            self.start += 1;
-            Some(unsafe { self.data.get_unchecked(index).assume_init_read() })
+        if self.start >= self.end {
+            return None;
         }
+        let index = self.start;
+        self.start += 1;
+        Some(unsafe { self.data.get_unchecked(index).assume_init_read() })
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -71,17 +70,11 @@ impl<T, const CAP: usize> Iterator for IntoIter<T, CAP> {
         (length, Some(length))
     }
 
-    fn count(self) -> usize
-    where
-        Self: Sized,
-    {
+    fn count(self) -> usize {
         self.end - self.start
     }
 
-    fn last(mut self) -> Option<Self::Item>
-    where
-        Self: Sized,
-    {
+    fn last(mut self) -> Option<Self::Item> {
         self.next_back()
     }
 
@@ -112,12 +105,11 @@ impl<T, const CAP: usize> Iterator for IntoIter<T, CAP> {
 
 impl<T, const CAP: usize> DoubleEndedIterator for IntoIter<T, CAP> {
     fn next_back(&mut self) -> Option<Self::Item> {
-        if self.start == self.end {
-            None
-        } else {
-            self.end -= 1;
-            Some(unsafe { self.data.get_unchecked(self.end).assume_init_read() })
+        if self.start >= self.end {
+            return None;
         }
+        self.end -= 1;
+        Some(unsafe { self.data.get_unchecked(self.end).assume_init_read() })
     }
 
     // TODO: should this exist? it changes how panics drop the elements
