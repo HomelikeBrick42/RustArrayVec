@@ -177,16 +177,16 @@ impl<T> DoubleEndedIterator for SliceVecIntoIter<T> {
 
     fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
         let to_drop_length = self.length.min(n);
+        self.length -= to_drop_length;
         let to_drop = unsafe {
             core::ptr::slice_from_raw_parts_mut(
                 self.array
                     .as_mut_ptr()
                     .cast::<T>()
-                    .add(self.start + self.length - to_drop_length),
+                    .add(self.start + self.length),
                 to_drop_length,
             )
         };
-        self.length -= to_drop_length;
         unsafe { core::ptr::drop_in_place(to_drop) };
         self.next_back()
     }
