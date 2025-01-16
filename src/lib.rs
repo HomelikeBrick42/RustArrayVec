@@ -2,12 +2,15 @@
 #![deny(rust_2018_idioms, rust_2024_compatibility)]
 
 use core::{
-    mem::MaybeUninit,
+    mem::{ManuallyDrop, MaybeUninit},
     ops::{Deref, DerefMut},
 };
 
 #[cfg(test)]
 mod tests;
+
+mod into_iter;
+pub use into_iter::*;
 
 pub type ArrayVec<T, const N: usize> = private::ArrayVec<[MaybeUninit<T>; N]>;
 pub type SliceVec<T> = private::ArrayVec<[MaybeUninit<T>]>;
@@ -21,14 +24,14 @@ mod private {
     }
 
     pub trait ArrayVecBacking {
-        unsafe fn drop_elements(&mut self, length: usize);
+        unsafe fn drop_elements(&mut self, start: usize, length: usize);
     }
 
     impl<T, const N: usize> ArrayVecBacking for [MaybeUninit<T>; N] {
-        unsafe fn drop_elements(&mut self, length: usize) {
+        unsafe fn drop_elements(&mut self, start: usize, length: usize) {
             unsafe {
                 core::ptr::drop_in_place(core::ptr::slice_from_raw_parts_mut(
-                    self.as_mut_ptr().cast::<T>(),
+                    self.as_mut_ptr().cast::<T>().add(start),
                     length,
                 ))
             }
@@ -36,10 +39,10 @@ mod private {
     }
 
     impl<T> ArrayVecBacking for [MaybeUninit<T>] {
-        unsafe fn drop_elements(&mut self, length: usize) {
+        unsafe fn drop_elements(&mut self, start: usize, length: usize) {
             unsafe {
                 core::ptr::drop_in_place(core::ptr::slice_from_raw_parts_mut(
-                    self.as_mut_ptr().cast::<T>(),
+                    self.as_mut_ptr().cast::<T>().add(start),
                     length,
                 ))
             }
@@ -48,7 +51,7 @@ mod private {
 
     impl<Array: ArrayVecBacking + ?Sized> Drop for ArrayVec<Array> {
         fn drop(&mut self) {
-            unsafe { self.array.drop_elements(self.length) }
+            unsafe { self.array.drop_elements(0, self.length) }
         }
     }
 }
@@ -132,6 +135,19 @@ impl<T, const N: usize> Deref for ArrayVec<T, N> {
 impl<T, const N: usize> DerefMut for ArrayVec<T, N> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self
+    }
+}
+
+impl<T, const N: usize> IntoIterator for ArrayVec<T, N> {
+    type Item = T;
+    type IntoIter = ArrayVecIntoIter<T, N>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        let (length, array) = {
+            let this = ManuallyDrop::new(self);
+            (this.length, unsafe { core::ptr::read(&this.array) })
+        };
+        ArrayVecIntoIter::new(length, array)
     }
 }
 
